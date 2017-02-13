@@ -16,6 +16,7 @@ var currentSongs = [];
 // ------
 
 // 获取控制台输入
+// nodeJS 中从命令行等待并读入用户输入实现与用户交互的方法 @志文工作室: https://lzw.me/a/nodejs-stdin.html
 function readSyncByRl(tips) {
     tips = tips || '> ';
 
@@ -53,18 +54,53 @@ function getFileInfo(file) {
     return time;
 }
 
-function sleep(sleepTime) {
-    for(var start = +new Date; +new Date - start <= sleepTime; ) { } 
+function formatFile(fileName, newName) {
+
+    // 修改创建时间
+    fs.utimes(fileName, currentATime, currentMTime, function(err) {
+        err && console.log('【error】' + err);
+
+        // 打开文件，调起系统的音乐播放器
+        // windows 的命令是 start ， mac 的命令是 open
+        var openFileCommand = 'open';
+        if (platform == 'win32') {
+            openFileCommand = 'start';
+        }
+        exec(openFileCommand + ' ' + fileName, function(err) {
+            if (err) {
+                console.log('【error】' + err);
+            }
+            else {
+                readSyncByRl('是否保存该文件？（回车保存，否则选择新id）').then(function(res) {
+                    if (!res) {
+                        // 修改文件名
+                        fs.rename(fileName, currentDir + '/' + newName + '.mp3', function(err) {
+                            err && console.log('【error】' + err);
+                            readSyncByRl('确认删除源文件？（回车删除，其它保留）').then(function(res) {
+                                !res && fs.rename(currentDir + '/' + currentFileName, currentDir + '/' + '__deleted/' + currentFileName);
+                            });
+                        });
+                    }
+                    else {
+                        fs.unlinkSync(fileName);
+                        getUrl(currentSongs, (+res - 1));
+                    }
+                });
+            }
+        });
+    });
 }
 
 // windows 下文件名后面会带一串字符，mac下没有。
 // 有这个方法恢复文件名
-function fixFixeName(originName) {
+function fixFixeName(originName, newName) {
     var files = fs.readdirSync(process.cwd());
     for (var i = 0; i < files.length; i++) {
         if (files[i].indexOf(originName) == 0) {
-            fs.renameSync(files[i], originName);
-            sleep(3000);  // 等待文件改名完成。也可以改成异步
+            fs.rename(files[i], originName, function(err) {
+                err && console.log(err);
+                formatFile(originName, newName);
+            });
             return files[i];
         }
     }
@@ -81,7 +117,7 @@ function saveFile(url, newName) {
 
             exec('wget ' + url, function(err,stdout,stderr){
                 if(err) {
-                    console.log('get weather api error:'+stderr);
+                    console.log('error:'+stderr);
                 } else {
                     console.log('download success');
 
@@ -89,41 +125,7 @@ function saveFile(url, newName) {
                     var urlSplit = url.split('/');
                     var fileName = urlSplit[urlSplit.length - 1];
 
-                    fixFixeName(fileName);
-
-                    // 修改创建时间
-                    fs.utimes(fileName, currentATime, currentMTime, function(err) {
-                        err && console.log('【error】' + err);
-
-                        // 打开文件，调起系统的音乐播放器
-                        // windows 的命令是 start ， mac 的命令是 open
-                        var openFileCommand = 'open';
-                        if (platform == 'win32') {
-                            openFileCommand = 'start';
-                        }
-                        exec(openFileCommand + ' ' + fileName, function(err) {
-                            if (err) {
-                                console.log('【error】' + err);
-                            }
-                            else {
-                                readSyncByRl('是否保存该文件？（回车保存，否则选择新id）').then(function(res) {
-                                    if (!res) {
-                                        // 修改文件名
-                                        fs.rename(fileName, currentDir + '/' + newName + '.mp3', function(err) {
-                                            err && console.log('【error】' + err);
-                                            readSyncByRl('确认删除源文件？（回车删除，其它保留）').then(function(res) {
-                                                !res && fs.rename(currentDir + '/' + currentFileName, currentDir + '/' + '__deleted/' + currentFileName);
-                                            });
-                                        });
-                                    }
-                                    else {
-                                        fs.unlinkSync(fileName);
-                                        getUrl(currentSongs, (+res - 1));
-                                    }
-                                });
-                            }
-                        });
-                    });
+                    fixFixeName(fileName, newName);
                 }
             });
         });
