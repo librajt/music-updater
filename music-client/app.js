@@ -4,6 +4,8 @@ var readline = require('readline');
 var path = require('path');
 var exec = require('child_process').exec;
 
+var platform = require('os').platform();
+
 // ------
 var currentDir = '';
 var currentPage = '';
@@ -55,12 +57,14 @@ function sleep(sleepTime) {
     for(var start = +new Date; +new Date - start <= sleepTime; ) { } 
 }
 
+// windows 下文件名后面会带一串字符，mac下没有。
+// 有这个方法恢复文件名
 function fixFixeName(originName) {
     var files = fs.readdirSync(process.cwd());
     for (var i = 0; i < files.length; i++) {
         if (files[i].indexOf(originName) == 0) {
             fs.renameSync(files[i], originName);
-            sleep(3000);
+            sleep(3000);  // 等待文件改名完成。也可以改成异步
             return files[i];
         }
     }
@@ -68,10 +72,10 @@ function fixFixeName(originName) {
 
 // 下载并存储文件
 function saveFile(url, newName) {
-    // 修改系统时间，以修改创建时间
+    // 修改系统时间，以修改创建时间 for windows，mac 下会忽略
     var date = (currentFileTime.getFullYear() + '/' + (currentFileTime.getMonth() + 1) + '/' + currentFileTime.getDate());
     var time = (currentFileTime.getHours() + ':' + (currentFileTime.getMinutes()) + ':' + currentFileTime.getSeconds());
-    
+
     exec('@date ' + date, function() {
         exec('@time ' + time, function() {
 
@@ -84,14 +88,20 @@ function saveFile(url, newName) {
                     // 取源文件名
                     var urlSplit = url.split('/');
                     var fileName = urlSplit[urlSplit.length - 1];
-                    
+
                     fixFixeName(fileName);
 
                     // 修改创建时间
                     fs.utimes(fileName, currentATime, currentMTime, function(err) {
                         err && console.log('【error】' + err);
 
-                        exec('start ' + fileName, function(err) {
+                        // 打开文件，调起系统的音乐播放器
+                        // windows 的命令是 start ， mac 的命令是 open
+                        var openFileCommand = 'open';
+                        if (platform == 'win32') {
+                            openFileCommand = 'start';
+                        }
+                        exec(openFileCommand + ' ' + fileName, function(err) {
                             if (err) {
                                 console.log('【error】' + err);
                             }
@@ -108,7 +118,6 @@ function saveFile(url, newName) {
                                     }
                                     else {
                                         fs.unlinkSync(fileName);
-                                        // chooseFile();
                                         getUrl(currentSongs, (+res - 1));
                                     }
                                 });
@@ -125,7 +134,13 @@ function downloadUrl(data, name) {
     data = data.data[0];
     console.log('-- download url --: ' + data.url);
     if (!data.url) {
-        chooseFile();
+        readSyncByRl('直接从url下载？（输入url，否则回车取消并重新选个文件）').then(function(res) {
+            if (res) {
+                saveFile(res, name);
+                return;
+            }
+            chooseFile();
+        });
         return;
     }
     saveFile(data.url, name);
@@ -136,7 +151,7 @@ function getUrl(data, index) {
     var id = item.id, br = item.l.br;
     var m = item;
     br = m.duration ? ((m.bMusic && m.bMusic.bitrate) || (m.lMusicm && m.lMusic.bitrate) || (m.mMusic && m.mMusic.bitrate) || (m.hMusic && m.hMusic.bitrate)) : (((m.b && m.b.br)) || (m.l && m.l.br) || (m.m && m.m.br) || (m.h && m.h.br));
-    http.get('http://192.168.0.102:3000/v1/music/url?id=' + id + '&br=' + br, function(res) {
+    http.get('http://localhost:3000/v1/music/url?id=' + id + '&br=' + br, function(res) {
         res.on('data', function(data) {
             var name = item.name + ' - ' + item.ar[0].name;
             name = name.replace(/\:/g, '').replace(/\*/g, ' ');
@@ -177,7 +192,7 @@ function search(page) {
     currentPage = page;
     console.log('-- search --: ' + curentSearchName);
     var pageSize= 10;
-    http.get('http://192.168.0.102:3000/v1/search?offset=' +(pageSize * (currentPage - 1)) + '&limit=' + pageSize + '&type=1&keywords=' + encodeURIComponent(curentSearchName), function(res) {
+    http.get('http://localhost:3000/v1/search?offset=' + (pageSize * (currentPage - 1)) + '&limit=' + pageSize + '&type=1&keywords=' + encodeURIComponent(curentSearchName), function(res) {
         res.on('data', function(data) {
             data = JSON.parse(data);
             showSearchList(data);
